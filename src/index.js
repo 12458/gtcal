@@ -52,7 +52,8 @@ export default {
         html += `<li><a href="/${year}08">Fall ${year}</a></li>`;
       }
 
-      html += "</ul></body></html>";
+      html +=
+        '</ul><footer><p>Made with ❤️ by <a href="https://about.shangen.org">Shang En</a><p>Licensed under the MIT license.</p><a href="https://github.com/12458/gtcal">Source Code</a></p></footer></body></html>';
 
       // Return the HTML response
       return new Response(html, {

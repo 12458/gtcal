@@ -46,7 +46,7 @@ export default {
         '<!doctypehtml><html lang=en><meta charset=UTF-8><meta content="width=device-width,initial-scale=1"name=viewport><title>GT Academic Calendars</title><link href=https://cdn.simplecss.org/simple.min.css rel=stylesheet></head><body><h1>Georgia Tech Academic Calendars</h1><ul>';
 
       // Generate links for three years: last year, this year, and next year
-      for (let year = currentYear - 2; year <= currentYear; year++) {
+      for (let year = currentYear - 1; year <= currentYear + 1; year++) {
         html += `<li><a href="/${year}02">Spring ${year}</a></li>`;
         html += `<li><a href="/${year}05">Summer ${year}</a></li>`;
         html += `<li><a href="/${year}08">Fall ${year}</a></li>`;

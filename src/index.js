@@ -144,7 +144,7 @@ export default {
       if (cachedData && cachedMetadata) {
         const metadata = JSON.parse(await cachedMetadata.text());
         const cacheAge = Date.now() - new Date(metadata.cachedAt).getTime();
-        const cacheTTL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+        const cacheTTL = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
         if (cacheAge < cacheTTL) {
           // Cache is still valid, use cached data

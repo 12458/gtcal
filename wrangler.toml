@@ -1,5 +1,9 @@
 #:schema node_modules/wrangler/config-schema.json
-name = "gtcal"
+name = "gt-cal"
 main = "src/index.js"
 compatibility_date = "2024-04-23"
 compatibility_flags = ["nodejs_compat"]
+
+[[r2_buckets]]
+binding = "CALENDAR_CACHE"
+bucket_name = "gtcal"

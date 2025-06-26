@@ -30,6 +30,57 @@ function mapTermToSeason(term) {
   return `${season} ${year}`;
 }
 
+function parseNaturalLanguageDate(dateString) {
+  // Parse dates like "January 20 (Mon)" or "April 14 (Mon) - May 16 (Fri)"
+  const monthMap = {
+    "January": "01", "February": "02", "March": "03", "April": "04",
+    "May": "05", "June": "06", "July": "07", "August": "08",
+    "September": "09", "October": "10", "November": "11", "December": "12"
+  };
+
+  // Handle date ranges (take the start date)
+  const startDate = dateString.split(' - ')[0];
+
+  // Extract month and day from format like "January 20 (Mon)"
+  const match = startDate.match(/([A-Za-z]+)\s+(\d+)/);
+  if (!match) return null;
+
+  const [, monthName, day] = match;
+  const month = monthMap[monthName];
+
+  if (!month) return null;
+
+  return { month, day: day.padStart(2, '0') };
+}
+
+function filterEventsBySemester(events, term) {
+  // Map term codes to semester codes
+  const termYear = term.slice(0, 4);
+  const termMonth = term.slice(4);
+
+  let semesterCodes = [];
+  switch (termMonth) {
+    case "02": // Spring
+      semesterCodes = ["2"];
+      break;
+    case "05": // Summer
+      semesterCodes = ["5A", "5M", "5F", "5E", "5L"];
+      break;
+    case "08": // Fall
+      semesterCodes = ["8"];
+      break;
+  }
+
+  return events.filter(event =>
+    event.year === termYear && semesterCodes.includes(event.semester)
+  );
+}
+
+function stripHtmlTags(html) {
+  // Simple HTML tag removal - replace with plain text
+  return html.replace(/<[^>]*>/g, '').trim();
+}
+
 export default {
   async fetch(request, env, ctx) {
     // Get the URL of the request
@@ -64,13 +115,23 @@ export default {
     // Assume the first path segment is the term code
     const term = pathSegments[0]; // This would be the `term` in the path `/{term}`
 
-    const url_new = `https://ro-blob.azureedge.net/ro-calendar-data/public/txt/${term}.txt`;
+    // Determine if we should use the new JSON API based on the term
+    const termYear = parseInt(term.slice(0, 4));
+    const termMonth = term.slice(4);
+    const isSummer2025OrLater = termYear > 2025 || (termYear === 2025 && parseInt(termMonth) >= 5);
+
+    // Choose data source based on term
+    const useJsonApi = isSummer2025OrLater;
+    const url_new = useJsonApi
+      ? `https://registrar.gatech.edu/calevents/json?year=${termYear}-${termYear + 1}&status=current`
+      : `https://ro-blob.azureedge.net/ro-calendar-data/public/txt/${term}.txt`;
 
     try {
       // Check R2 cache first
-      const cacheKey = `calendar-data/${term}.txt`;
+      const dataFormat = useJsonApi ? 'json' : 'txt';
+      const cacheKey = `calendar-data/${term}.${dataFormat}`;
       const metadataKey = `calendar-metadata/${term}.json`;
-      
+
       // Try to get cached data and metadata
       const [cachedData, cachedMetadata] = await Promise.all([
         env.CALENDAR_CACHE.get(cacheKey),
@@ -84,7 +145,7 @@ export default {
         const metadata = JSON.parse(await cachedMetadata.text());
         const cacheAge = Date.now() - new Date(metadata.cachedAt).getTime();
         const cacheTTL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-        
+
         if (cacheAge < cacheTTL) {
           // Cache is still valid, use cached data
           data = await cachedData.text();
@@ -94,24 +155,25 @@ export default {
       if (!data) {
         // No cache or cache expired, fetch from external source
         const response = await fetch(url_new);
-        
+
         // Check if the URL is not found
         if (response.status === 404) {
           return new Response("The requested URL was not found on the server.", {
             status: 404,
           });
         }
-        
+
         data = await response.text();
 
         // Cache the data and metadata
         const metadata = {
           cachedAt: new Date().toISOString(),
           originalUrl: url_new,
-          dataSize: data.length
+          dataSize: data.length,
+          dataFormat: dataFormat
         };
 
-        // Store both data and metadata in R2 (don't await to avoid blocking response)
+        // Store both data and metadata in R2
         Promise.all([
           env.CALENDAR_CACHE.put(cacheKey, data),
           env.CALENDAR_CACHE.put(metadataKey, JSON.stringify(metadata))
@@ -121,11 +183,50 @@ export default {
         });
       }
 
-      // Split the data into rows
-      const rows = data.split("\r\n");
+      let events = [];
 
-      // Extract the headers
-      const headers = rows[0].split("\t");
+      if (useJsonApi) {
+        // Parse JSON data
+        const jsonData = JSON.parse(data);
+        const filteredEvents = filterEventsBySemester(jsonData.data, term);
+
+        // Convert JSON events to TSV-like format for compatibility
+        events = filteredEvents.map(event => {
+          const parsedDate = parseNaturalLanguageDate(event.date);
+          if (!parsedDate) return null;
+
+          // Convert to MM/DD/YYYY format
+          const dateStr = `${parsedDate.month}/${parsedDate.day}/${event.year}`;
+
+          return {
+            Date: dateStr,
+            EndDate: dateStr, // Use same date for now, could be enhanced for ranges
+            Title: stripHtmlTags(event.event),
+            EventCategory: event.category,
+            Body: "null",
+            Time: "null",
+            EndTime: "null",
+            EventLocation: "null"
+          };
+        }).filter(event => event !== null);
+      } else {
+        // Parse TSV data
+        const rows = data.split("\r\n");
+        const headers = rows[0].split("\t");
+
+        // Parse each row into an event
+        events = rows.slice(1).map(row => {
+          const values = row.split("\t");
+          if (values.length < headers.length) return null;
+
+          const event = values.reduce((obj, value, index) => {
+            obj[headers[index].trim()] = value;
+            return obj;
+          }, {});
+
+          return event;
+        }).filter(event => event !== null);
+      }
 
       const calendarName = `GT ${mapTermToSeason(term)} Calendar`;
 
@@ -140,15 +241,8 @@ export default {
         "X-WR-TIMEZONE:America/New_York",
       ];
 
-      // Parse each row into an iCalendar event
-      rows.slice(1).forEach((row) => {
-        const values = row.split("\t");
-        if (values.length < headers.length) return; // Skip incomplete rows
-
-        const event = values.reduce((obj, value, index) => {
-          obj[headers[index].trim()] = value;
-          return obj;
-        }, {});
+      // Parse each event into an iCalendar event
+      events.forEach((event) => {
 
         // Format dates from MM/DD/YYYY to YYYYMMDD and time to HHMMSS
         const formatDateTime = (date, time) => {
@@ -168,19 +262,18 @@ export default {
           const formattedHour = isPM
             ? parseInt(hours) + 12
             : isAM
-            ? "00"
-            : hours.padStart(2, "0");
+              ? "00"
+              : hours.padStart(2, "0");
           return `${formattedDate}T${formattedHour}${minutes}00`;
         };
 
         if (event.Date && event.Title) {
-          const description = `${
-            event.EventCategory === "null"
+          const description = `${event.EventCategory === "null"
               ? ""
               : "<b>Category: " +
-                removeQuotationMarks(event.EventCategory) +
-                "</b>\n"
-          }${event.Body === "null" ? "" : removeQuotationMarks(event.Body)}`;
+              removeQuotationMarks(event.EventCategory) +
+              "</b>\n"
+            }${event.Body === "null" ? "" : removeQuotationMarks(event.Body)}`;
 
           // Calculate event duration in days
           const startDate = new Date(event.Date);
@@ -202,10 +295,9 @@ export default {
                 event.Time
               )}`,
               `DESCRIPTION:${description}`,
-              `LOCATION:${
-                event.EventLocation === "null"
-                  ? ""
-                  : removeQuotationMarks(event.EventLocation)
+              `LOCATION:${event.EventLocation === "null"
+                ? ""
+                : removeQuotationMarks(event.EventLocation)
               }`,
               "END:VEVENT"
             );
@@ -223,10 +315,9 @@ export default {
                 event.EndTime
               )}`,
               `DESCRIPTION:${description}`,
-              `LOCATION:${
-                event.EventLocation === "null"
-                  ? ""
-                  : removeQuotationMarks(event.EventLocation)
+              `LOCATION:${event.EventLocation === "null"
+                ? ""
+                : removeQuotationMarks(event.EventLocation)
               }`,
               "END:VEVENT"
             );
@@ -243,10 +334,9 @@ export default {
                 event.EndTime
               )}`,
               `DESCRIPTION:${description}`,
-              `LOCATION:${
-                event.EventLocation === "null"
-                  ? ""
-                  : removeQuotationMarks(event.EventLocation)
+              `LOCATION:${event.EventLocation === "null"
+                ? ""
+                : removeQuotationMarks(event.EventLocation)
               }`,
               "END:VEVENT"
             );

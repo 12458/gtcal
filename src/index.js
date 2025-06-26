@@ -67,14 +67,59 @@ export default {
     const url_new = `https://ro-blob.azureedge.net/ro-calendar-data/public/txt/${term}.txt`;
 
     try {
-      const response = await fetch(url_new);
-      // Check if the URL is not found
-      if (response.status === 404) {
-        return new Response("The requested URL was not found on the server.", {
-          status: 404,
+      // Check R2 cache first
+      const cacheKey = `calendar-data/${term}.txt`;
+      const metadataKey = `calendar-metadata/${term}.json`;
+      
+      // Try to get cached data and metadata
+      const [cachedData, cachedMetadata] = await Promise.all([
+        env.CALENDAR_CACHE.get(cacheKey),
+        env.CALENDAR_CACHE.get(metadataKey)
+      ]);
+
+      let data;
+
+      // If we have both data and metadata, check if cache is still valid
+      if (cachedData && cachedMetadata) {
+        const metadata = JSON.parse(await cachedMetadata.text());
+        const cacheAge = Date.now() - new Date(metadata.cachedAt).getTime();
+        const cacheTTL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+        
+        if (cacheAge < cacheTTL) {
+          // Cache is still valid, use cached data
+          data = await cachedData.text();
+        }
+      }
+
+      if (!data) {
+        // No cache or cache expired, fetch from external source
+        const response = await fetch(url_new);
+        
+        // Check if the URL is not found
+        if (response.status === 404) {
+          return new Response("The requested URL was not found on the server.", {
+            status: 404,
+          });
+        }
+        
+        data = await response.text();
+
+        // Cache the data and metadata
+        const metadata = {
+          cachedAt: new Date().toISOString(),
+          originalUrl: url_new,
+          dataSize: data.length
+        };
+
+        // Store both data and metadata in R2 (don't await to avoid blocking response)
+        Promise.all([
+          env.CALENDAR_CACHE.put(cacheKey, data),
+          env.CALENDAR_CACHE.put(metadataKey, JSON.stringify(metadata))
+        ]).catch(error => {
+          console.error('Failed to cache data:', error);
+          // Don't fail the request if caching fails
         });
       }
-      const data = await response.text();
 
       // Split the data into rows
       const rows = data.split("\r\n");

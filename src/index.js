@@ -121,18 +121,26 @@ function parseNaturalLanguageDate(dateString) {
 }
 
 function stripHtmlTags(html) {
+  // Simple HTML tag removal - replace with plain text
   return html.replace(/<[^>]*>/g, "").trim();
 }
 
 export default {
   async fetch(request, env, ctx) {
+    // Get the URL of the request
     const url = new URL(request.url);
+
+    // Split the pathname part of the URL into segments
     const pathSegments = url.pathname.split("/").filter((p) => p);
 
+    // Check if a term parameter is provided
     if (pathSegments.length === 0) {
+      // No term provided, generate HTML for the current and surrounding years
       const currentYear = new Date().getFullYear();
       let html =
         '<!doctypehtml><html lang=en><meta charset=UTF-8><meta content="width=device-width,initial-scale=1"name=viewport><title>GT Academic Calendars</title><link href=https://cdn.simplecss.org/simple.min.css rel=stylesheet></head><body><h1>Georgia Tech Academic Calendars</h1><ul>';
+
+      // Generate links for three years: last year, this year, and next year
       for (let year = currentYear - 1; year <= currentYear + 2; year++) {
         html += `<li><a href="/${year}02">Spring ${year}</a></li>`;
         html += `<li><a href="/${year}05">Summer ${year}</a></li>`;
@@ -140,6 +148,8 @@ export default {
       }
       html +=
         '</ul><footer><p>Made with ❤️ by <a href="https://about.shangen.org">Shang En</a><p>Licensed under the MIT license.</p><a href="https://github.com/12458/gtcal">Source Code</a></p></footer></body></html>';
+
+      // Return the HTML response
       return new Response(html, {
         headers: { "Content-Type": "text/html;charset=UTF-8" },
       });
@@ -197,7 +207,7 @@ export default {
       // Initialize an array to hold the iCalendar events
       let icsEvents = [
         "BEGIN:VCALENDAR",
-        "VERSION:3.0",
+        "VERSION:2.0",
         "PRODID:-//Sim Shang En//sim@shangen.org//EN",
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
@@ -227,6 +237,8 @@ export default {
       });
 
       icsEvents.push("END:VCALENDAR");
+
+      // Join all events into a single string to form the complete iCalendar content
       const icsContent = icsEvents.join("\r\n");
 
       // Return the iCalendar response

@@ -1,74 +1,9 @@
-async function getFutureCalendarData(env, term) {
-  const termYear = parseInt(term.slice(0, 4), 10);
-  const academicYear = `${termYear}-${termYear + 1}`;
-
-  const cacheKey = `calendar-data/json-${academicYear}`;
-  const cacheTTL = 7 * 24 * 60 * 60 * 1000; // 7 days
-
-  // 1. Check cache first
-  const cached = await env.CALENDAR_CACHE.get(cacheKey);
-  if (cached) {
-    const { cachedAt, data } = JSON.parse(await cached.text());
-    if (Date.now() - new Date(cachedAt).getTime() < cacheTTL) {
-      console.log(`Returning ${academicYear} data from cache.`);
-      return data;
-    }
+function removeQuotationMarks(text) {
+  // Check if the first and last characters are both double quotes
+  if (text.startsWith('"') && text.endsWith('"')) {
+    return text.slice(1, -1); // Remove the first and last characters
   }
-
-  // 2. If cache is stale or missing, fetch from the API
-  console.log(`Fetching new ${academicYear} data from registrar's JSON API...`);
-
-  const timestamp = Date.now();
-  const apiUrl = `https://registrar.gatech.edu/calevents/proxy?year=${academicYear}&status=current&_=${timestamp}`;
-
-  const response = await fetch(apiUrl, {
-    headers: {
-      // Mimic a browser request
-      "User-Agent":
-        "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-      Accept: "application/json, text/javascript, */*; q=0.01",
-      "X-Requested-With": "XMLHttpRequest",
-      Referer: "https://registrar.gatech.edu/current-academic-calendar",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch JSON data. Status: ${response.status}`);
-  }
-
-  const jsonData = await response.json();
-
-  // 3. Cache the new data
-  const cachePayload = {
-    cachedAt: new Date().toISOString(),
-    data: jsonData.data,
-  };
-  await env.CALENDAR_CACHE.put(cacheKey, JSON.stringify(cachePayload));
-  console.log(`Successfully fetched and cached ${academicYear} data.`);
-
-  return jsonData.data;
-}
-
-function filterJsonEventsByTerm(events, term) {
-  const termYear = term.slice(0, 4);
-  const termMonth = term.slice(4);
-
-  let semesterCodes = [];
-  switch (termMonth) {
-    case "02":
-      semesterCodes = ["2"];
-      break; // Spring
-    case "05":
-      semesterCodes = ["5A", "5M", "5F", "5E", "5L", "Summer-All"];
-      break; // Summer sessions
-    case "08":
-      semesterCodes = ["8"];
-      break; // Fall
-  }
-
-  return events.filter(
-    (event) => event.year === termYear && semesterCodes.includes(event.semester)
-  );
+  return text; // Return the original text if it doesn't start and end with quotes
 }
 
 function mapTermToSeason(term) {
@@ -111,13 +46,43 @@ function parseNaturalLanguageDate(dateString) {
     November: "11",
     December: "12",
   };
+
+  // Handle date ranges (take the start date)
   const startDate = dateString.split(" - ")[0];
+
+  // Extract month and day from format like "January 20 (Mon)"
   const match = startDate.match(/([A-Za-z]+)\s+(\d+)/);
   if (!match) return null;
+
   const [, monthName, day] = match;
   const month = monthMap[monthName];
+
   if (!month) return null;
+
   return { month, day: day.padStart(2, "0") };
+}
+
+function filterEventsBySemester(events, term) {
+  // Map term codes to semester codes
+  const termYear = term.slice(0, 4);
+  const termMonth = term.slice(4);
+
+  let semesterCodes = [];
+  switch (termMonth) {
+    case "02": // Spring
+      semesterCodes = ["2"];
+      break;
+    case "05": // Summer
+      semesterCodes = ["5A", "5M", "5F", "5E", "5L", "Summer-All"];
+      break;
+    case "08": // Fall
+      semesterCodes = ["8"];
+      break;
+  }
+
+  return events.filter(
+    (event) => event.year === termYear && semesterCodes.includes(event.semester)
+  );
 }
 
 function stripHtmlTags(html) {
@@ -141,11 +106,12 @@ export default {
         '<!doctypehtml><html lang=en><meta charset=UTF-8><meta content="width=device-width,initial-scale=1"name=viewport><title>GT Academic Calendars</title><link href=https://cdn.simplecss.org/simple.min.css rel=stylesheet></head><body><h1>Georgia Tech Academic Calendars</h1><ul>';
 
       // Generate links for three years: last year, this year, and next year
-      for (let year = currentYear - 1; year <= currentYear + 2; year++) {
+      for (let year = currentYear - 1; year <= currentYear + 1; year++) {
         html += `<li><a href="/${year}02">Spring ${year}</a></li>`;
         html += `<li><a href="/${year}05">Summer ${year}</a></li>`;
         html += `<li><a href="/${year}08">Fall ${year}</a></li>`;
       }
+
       html +=
         '</ul><footer><p>Made with ❤️ by <a href="https://about.shangen.org">Shang En</a><p>Licensed under the MIT license.</p><a href="https://github.com/12458/gtcal">Source Code</a></p></footer></body></html>';
 
@@ -155,51 +121,85 @@ export default {
       });
     }
 
-    const term = pathSegments[0];
-    const termYear = parseInt(term.slice(0, 4), 10);
-    const useNewMethod = termYear >= 2025;
+    // Assume the first path segment is the term code
+    const term = pathSegments[0]; // This would be the `term` in the path `/{term}`
+
+    // Determine if we should use the new JSON API based on the term
+    const termYear = parseInt(term.slice(0, 4));
+    const useNewApi = termYear >= 2025;
 
     try {
       let events = [];
 
-      if (useNewMethod) {
-        const allEventsForYear = await getFutureCalendarData(env, term);
-        const filteredEvents = filterJsonEventsByTerm(allEventsForYear, term);
+      if (useNewApi) {
+        const academicYear = `${termYear}-${termYear + 1}`;
+        const timestamp = Date.now();
+        const apiUrl = `https://registrar.gatech.edu/calevents/proxy?year=${academicYear}&status=current&_=${timestamp}`;
 
+        const response = await fetch(apiUrl, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
+            Accept: "application/json, text/javascript, */*; q=0.01",
+            "X-Requested-With": "XMLHttpRequest",
+            Referer: "https://registrar.gatech.edu/current-academic-calendar",
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch JSON data. Status: ${response.status}`
+          );
+        }
+
+        const jsonData = await response.json();
+        const filteredEvents = filterEventsBySemester(jsonData.data, term);
         events = filteredEvents
           .map((event) => {
             const parsedDate = parseNaturalLanguageDate(event.date);
             if (!parsedDate) return null;
+
+            const dateStr = `${parsedDate.month}/${parsedDate.day}/${event.year}`;
             return {
-              Date: `${parsedDate.month}/${parsedDate.day}/${event.year}`,
-              EndDate: `${parsedDate.month}/${parsedDate.day}/${event.year}`, // Assume single day for now
+              Date: dateStr,
+              EndDate: dateStr,
               Title: stripHtmlTags(event.event),
               EventCategory: event.category,
+              Body: "null",
+              Time: "null",
+              EndTime: "null",
+              EventLocation: "null",
             };
           })
-          .filter(Boolean);
+          .filter((event) => event !== null);
       } else {
-        // Legacy method
-        // Parse TSV data
-        const legacyUrl = `https://ro-blob.azureedge.net/ro-calendar-data/public/txt/${term}.txt`;
-        const response = await fetch(legacyUrl);
-        if (!response.ok)
-          return new Response("Calendar data not found.", { status: 404 });
+        const url_legacy = `https://ro-blob.azureedge.net/ro-calendar-data/public/txt/${term}.txt`;
+        const response = await fetch(url_legacy);
+        if (response.status === 404) {
+          return new Response(
+            "The requested URL was not found on the server.",
+            {
+              status: 404,
+            }
+          );
+        }
 
         const data = await response.text();
         const rows = data.split("\r\n");
         const headers = rows[0].split("\t");
+
         events = rows
           .slice(1)
           .map((row) => {
             const values = row.split("\t");
             if (values.length < headers.length) return null;
-            return values.reduce(
-              (obj, val, i) => ({ ...obj, [headers[i].trim()]: val }),
-              {}
-            );
+            const event = values.reduce((obj, value, index) => {
+              obj[headers[index].trim()] = value;
+              return obj;
+            }, {});
+            return event;
           })
-          .filter(Boolean);
+          .filter((event) => event !== null);
       }
 
       const calendarName = `GT ${mapTermToSeason(term)} Calendar`;
@@ -217,22 +217,107 @@ export default {
 
       // Parse each event into an iCalendar event
       events.forEach((event) => {
+        // Format dates from MM/DD/YYYY to YYYYMMDD and time to HHMMSS
+        const formatDateTime = (date, time) => {
+          if (!date) return "";
+          const [month, day, year] = date.split("/");
+          const formattedDate = `${year}${month.padStart(2, "0")}${day.padStart(
+            2,
+            "0"
+          )}`;
+          if (!time || time === "null") return `${formattedDate}`;
+
+          // Convert time to 24-hour format and append to date
+          const timeString = time.replace(/(AM|PM)/i, "").trim();
+          const [hours, minutes] = timeString.split(":");
+          const isPM = time.match(/PM/i) && parseInt(hours) < 12;
+          const isAM = time.match(/AM/i) && parseInt(hours) === 12;
+          const formattedHour = isPM
+            ? parseInt(hours) + 12
+            : isAM
+            ? "00"
+            : hours.padStart(2, "0");
+          return `${formattedDate}T${formattedHour}${minutes}00`;
+        };
+
         if (event.Date && event.Title) {
-          const formatDate = (dateStr) => {
-            const [month, day, year] = dateStr.split("/");
-            return `${year}${month.padStart(2, "0")}${day.padStart(2, "0")}`;
-          };
-          const description = event.EventCategory
-            ? `Category: ${event.EventCategory}`
-            : "";
-          icsEvents.push(
-            "BEGIN:VEVENT",
-            `SUMMARY:${event.Title.replace(/,/g, "\\,")}`,
-            `DTSTART;VALUE=DATE:${formatDate(event.Date)}`,
-            `DTEND;VALUE=DATE:${formatDate(event.Date)}`,
-            `DESCRIPTION:${description.replace(/,/g, "\\,")}`,
-            "END:VEVENT"
-          );
+          const description = `${
+            event.EventCategory === "null"
+              ? ""
+              : "<b>Category: " +
+                removeQuotationMarks(event.EventCategory) +
+                "</b>\n"
+          }${event.Body === "null" ? "" : removeQuotationMarks(event.Body)}`;
+
+          // Calculate event duration in days
+          const startDate = new Date(event.Date);
+          const endDate = new Date(event.EndDate);
+          const durationInDays = (endDate - startDate) / (1000 * 60 * 60 * 24);
+
+          // If duration exceeds 5 days, split into two events
+          if (durationInDays > 5) {
+            // Create "start" event
+            icsEvents.push(
+              "BEGIN:VEVENT",
+              `SUMMARY:Start - ${event.Title}`,
+              `DTSTART;TZID=America/New_York:${formatDateTime(
+                event.Date,
+                event.Time
+              )}`,
+              `DTEND;TZID=America/New_York:${formatDateTime(
+                event.Date,
+                event.Time
+              )}`,
+              `DESCRIPTION:${description}`,
+              `LOCATION:${
+                event.EventLocation === "null"
+                  ? ""
+                  : removeQuotationMarks(event.EventLocation)
+              }`,
+              "END:VEVENT"
+            );
+
+            // Create "end" event
+            icsEvents.push(
+              "BEGIN:VEVENT",
+              `SUMMARY:End - ${event.Title}`,
+              `DTSTART;TZID=America/New_York:${formatDateTime(
+                event.EndDate,
+                event.EndTime
+              )}`,
+              `DTEND;TZID=America/New_York:${formatDateTime(
+                event.EndDate,
+                event.EndTime
+              )}`,
+              `DESCRIPTION:${description}`,
+              `LOCATION:${
+                event.EventLocation === "null"
+                  ? ""
+                  : removeQuotationMarks(event.EventLocation)
+              }`,
+              "END:VEVENT"
+            );
+          } else {
+            icsEvents.push(
+              "BEGIN:VEVENT",
+              `SUMMARY:${event.Title}`,
+              `DTSTART;TZID=America/New_York:${formatDateTime(
+                event.Date,
+                event.Time
+              )}`,
+              `DTEND;TZID=America/New_York:${formatDateTime(
+                event.EndDate,
+                event.EndTime
+              )}`,
+              `DESCRIPTION:${description}`,
+              `LOCATION:${
+                event.EventLocation === "null"
+                  ? ""
+                  : removeQuotationMarks(event.EventLocation)
+              }`,
+              "END:VEVENT"
+            );
+          }
         }
       });
 

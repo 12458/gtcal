@@ -33,22 +33,13 @@ function mapTermToSeason(term) {
 function parseNaturalLanguageDate(dateString) {
   // Parse dates like "January 20 (Mon)" or "April 14 (Mon) - May 16 (Fri)"
   const monthMap = {
-    January: "01",
-    February: "02",
-    March: "03",
-    April: "04",
-    May: "05",
-    June: "06",
-    July: "07",
-    August: "08",
-    September: "09",
-    October: "10",
-    November: "11",
-    December: "12",
+    "January": "01", "February": "02", "March": "03", "April": "04",
+    "May": "05", "June": "06", "July": "07", "August": "08",
+    "September": "09", "October": "10", "November": "11", "December": "12"
   };
 
   // Handle date ranges (take the start date)
-  const startDate = dateString.split(" - ")[0];
+  const startDate = dateString.split(' - ')[0];
 
   // Extract month and day from format like "January 20 (Mon)"
   const match = startDate.match(/([A-Za-z]+)\s+(\d+)/);
@@ -59,7 +50,7 @@ function parseNaturalLanguageDate(dateString) {
 
   if (!month) return null;
 
-  return { month, day: day.padStart(2, "0") };
+  return { month, day: day.padStart(2, '0') };
 }
 
 function filterEventsBySemester(events, term) {
@@ -80,14 +71,14 @@ function filterEventsBySemester(events, term) {
       break;
   }
 
-  return events.filter(
-    (event) => event.year === termYear && semesterCodes.includes(event.semester)
+  return events.filter(event =>
+    event.year === termYear && semesterCodes.includes(event.semester)
   );
 }
 
 function stripHtmlTags(html) {
   // Simple HTML tag removal - replace with plain text
-  return html.replace(/<[^>]*>/g, "").trim();
+  return html.replace(/<[^>]*>/g, '').trim();
 }
 
 export default {
@@ -153,8 +144,7 @@ export default {
         }
 
         const jsonData = await response.json();
-        const filteredEvents = filterEventsBySemester(jsonData.data, term);
-        events = filteredEvents
+        const filteredEvents = filterEventsBySemester(jsonData.data, term);events = filteredEvents
           .map((event) => {
             const parsedDate = parseNaturalLanguageDate(event.date);
             if (!parsedDate) return null;
@@ -217,6 +207,7 @@ export default {
 
       // Parse each event into an iCalendar event
       events.forEach((event) => {
+
         // Format dates from MM/DD/YYYY to YYYYMMDD and time to HHMMSS
         const formatDateTime = (date, time) => {
           if (!date) return "";
@@ -235,19 +226,18 @@ export default {
           const formattedHour = isPM
             ? parseInt(hours) + 12
             : isAM
-            ? "00"
-            : hours.padStart(2, "0");
+              ? "00"
+              : hours.padStart(2, "0");
           return `${formattedDate}T${formattedHour}${minutes}00`;
         };
 
         if (event.Date && event.Title) {
-          const description = `${
-            event.EventCategory === "null"
+          const description = `${event.EventCategory === "null"
               ? ""
               : "<b>Category: " +
-                removeQuotationMarks(event.EventCategory) +
-                "</b>\n"
-          }${event.Body === "null" ? "" : removeQuotationMarks(event.Body)}`;
+              removeQuotationMarks(event.EventCategory) +
+              "</b>\n"
+            }${event.Body === "null" ? "" : removeQuotationMarks(event.Body)}`;
 
           // Calculate event duration in days
           const startDate = new Date(event.Date);
@@ -269,10 +259,9 @@ export default {
                 event.Time
               )}`,
               `DESCRIPTION:${description}`,
-              `LOCATION:${
-                event.EventLocation === "null"
-                  ? ""
-                  : removeQuotationMarks(event.EventLocation)
+              `LOCATION:${event.EventLocation === "null"
+                ? ""
+                : removeQuotationMarks(event.EventLocation)
               }`,
               "END:VEVENT"
             );
@@ -290,10 +279,9 @@ export default {
                 event.EndTime
               )}`,
               `DESCRIPTION:${description}`,
-              `LOCATION:${
-                event.EventLocation === "null"
-                  ? ""
-                  : removeQuotationMarks(event.EventLocation)
+              `LOCATION:${event.EventLocation === "null"
+                ? ""
+                : removeQuotationMarks(event.EventLocation)
               }`,
               "END:VEVENT"
             );
@@ -310,10 +298,9 @@ export default {
                 event.EndTime
               )}`,
               `DESCRIPTION:${description}`,
-              `LOCATION:${
-                event.EventLocation === "null"
-                  ? ""
-                  : removeQuotationMarks(event.EventLocation)
+              `LOCATION:${event.EventLocation === "null"
+                ? ""
+                : removeQuotationMarks(event.EventLocation)
               }`,
               "END:VEVENT"
             );

@@ -117,51 +117,92 @@ export default {
 
     // Determine if we should use the new JSON API based on the term
     const termYear = parseInt(term.slice(0, 4));
-    const useNewApi = termYear >= 2025;
+    const is2025OrLater = termYear >= 2025;
 
     try {
       let events = [];
 
-      if (useNewApi) {
+      if (is2025OrLater) {
         const academicYear = `${termYear}-${termYear + 1}`;
-        const timestamp = Date.now();
-        const apiUrl = `https://registrar.gatech.edu/calevents/proxy?year=${academicYear}&status=current&_=${timestamp}`;
+        const cacheKey = `calendar-data/json-${academicYear}`;
+        const cacheTTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-        const response = await fetch(apiUrl, {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
-            Accept: "application/json, text/javascript, */*; q=0.01",
-            "X-Requested-With": "XMLHttpRequest",
-            Referer: "https://registrar.gatech.edu/current-academic-calendar",
-          },
-        });
+        const cached = await env.CALENDAR_CACHE.get(cacheKey);
+        if (cached) {
+          const { cachedAt, data } = JSON.parse(await cached.text());
+          if (Date.now() - new Date(cachedAt).getTime() < cacheTTL) {
+            const filteredEvents = filterEventsBySemester(data, term);
 
-        if (!response.ok) {
-          throw new Error(
-            `Failed to fetch JSON data. Status: ${response.status}`
-          );
-        }
+            // Convert JSON events to TSV-like format for compatibility
+            events = filteredEvents
+              .map((event) => {
+                const parsedDate = parseNaturalLanguageDate(event.date);
+                if (!parsedDate) return null;
 
-        const jsonData = await response.json();
-        const filteredEvents = filterEventsBySemester(jsonData.data, term);events = filteredEvents
-          .map((event) => {
+                const dateStr = `${parsedDate.month}/${parsedDate.day}/${event.year}`;
+                return {
+                  Date: dateStr,
+                  EndDate: dateStr,
+                  Title: stripHtmlTags(event.event),
+                  EventCategory: event.category,
+                  Body: "null",
+                  Time: "null",
+                  EndTime: "null",
+                  EventLocation: "null",
+                };
+              })
+              .filter((event) => event !== null);
+          }
+        } else {
+          const timestamp = Date.now();
+          const apiUrl = `https://registrar.gatech.edu/calevents/proxy?year=${academicYear}&status=current&_=${timestamp}`;
+
+          const response = await fetch(apiUrl, {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
+              Accept: "application/json, text/javascript, */*; q=0.01",
+              "X-Requested-With": "XMLHttpRequest",
+              Referer: "https://registrar.gatech.edu/current-academic-calendar",
+            },
+          });
+
+          if (!response.ok) {
+            throw new Error(
+              `Failed to fetch JSON data. Status: ${response.status}`
+            );
+          }
+
+          const jsonData = await response.json();
+
+          const cachePayload = {
+            cachedAt: new Date().toISOString(),
+            data: jsonData.data,
+          };
+          await env.CALENDAR_CACHE.put(cacheKey, JSON.stringify(cachePayload));
+
+          const filteredEvents = filterEventsBySemester(jsonData.data, term);
+
+          // Convert JSON events to TSV-like format for compatibility
+          events = filteredEvents.map(event => {
             const parsedDate = parseNaturalLanguageDate(event.date);
             if (!parsedDate) return null;
-
+          
+            // Convert to MM/DD/YYYY format
             const dateStr = `${parsedDate.month}/${parsedDate.day}/${event.year}`;
+          
             return {
               Date: dateStr,
-              EndDate: dateStr,
+              EndDate: dateStr, // Use same date for now, could be enhanced for ranges
               Title: stripHtmlTags(event.event),
               EventCategory: event.category,
               Body: "null",
               Time: "null",
               EndTime: "null",
-              EventLocation: "null",
+              EventLocation: "null"
             };
-          })
-          .filter((event) => event !== null);
+          }).filter(event => event !== null);
+        }
       } else {
         const url_legacy = `https://ro-blob.azureedge.net/ro-calendar-data/public/txt/${term}.txt`;
         const response = await fetch(url_legacy);
@@ -173,23 +214,22 @@ export default {
             }
           );
         }
-
         const data = await response.text();
         const rows = data.split("\r\n");
         const headers = rows[0].split("\t");
 
-        events = rows
-          .slice(1)
-          .map((row) => {
-            const values = row.split("\t");
-            if (values.length < headers.length) return null;
-            const event = values.reduce((obj, value, index) => {
-              obj[headers[index].trim()] = value;
-              return obj;
-            }, {});
-            return event;
-          })
-          .filter((event) => event !== null);
+        // Parse each row into an event
+        events = rows.slice(1).map(row => {
+          const values = row.split("\t");
+          if (values.length < headers.length) return null;
+
+          const event = values.reduce((obj, value, index) => {
+            obj[headers[index].trim()] = value;
+            return obj;
+          }, {});
+
+          return event;
+        }).filter(event => event !== null);
       }
 
       const calendarName = `GT ${mapTermToSeason(term)} Calendar`;

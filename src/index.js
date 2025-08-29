@@ -64,7 +64,7 @@ function filterEventsBySemester(events, term) {
       semesterCodes = ["2"];
       break;
     case "05": // Summer
-      semesterCodes = ["5A", "5M", "5F", "5E", "5L"];
+      semesterCodes = ["5A", "5M", "5F", "5E", "5L", "Summer-All"];
       break;
     case "08": // Fall
       semesterCodes = ["8"];
@@ -117,100 +117,104 @@ export default {
 
     // Determine if we should use the new JSON API based on the term
     const termYear = parseInt(term.slice(0, 4));
-    const termMonth = term.slice(4);
-    const isSummer2025OrLater = termYear > 2025 || (termYear === 2025 && parseInt(termMonth) >= 5);
-
-    // Choose data source based on term
-    const useJsonApi = isSummer2025OrLater;
-    const url_new = useJsonApi
-      ? `https://registrar.gatech.edu/calevents/json?year=${termYear}-${termYear + 1}&status=current`
-      : `https://ro-blob.azureedge.net/ro-calendar-data/public/txt/${term}.txt`;
+    const is2025OrLater = termYear >= 2025;
 
     try {
-      // Check R2 cache first
-      const dataFormat = useJsonApi ? 'json' : 'txt';
-      const cacheKey = `calendar-data/${term}.${dataFormat}`;
-      const metadataKey = `calendar-metadata/${term}.json`;
-
-      // Try to get cached data and metadata
-      const [cachedData, cachedMetadata] = await Promise.all([
-        env.CALENDAR_CACHE.get(cacheKey),
-        env.CALENDAR_CACHE.get(metadataKey)
-      ]);
-
-      let data;
-
-      // If we have both data and metadata, check if cache is still valid
-      if (cachedData && cachedMetadata) {
-        const metadata = JSON.parse(await cachedMetadata.text());
-        const cacheAge = Date.now() - new Date(metadata.cachedAt).getTime();
-        const cacheTTL = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
-
-        if (cacheAge < cacheTTL) {
-          // Cache is still valid, use cached data
-          data = await cachedData.text();
-        }
-      }
-
-      if (!data) {
-        // No cache or cache expired, fetch from external source
-        const response = await fetch(url_new);
-
-        // Check if the URL is not found
-        if (response.status === 404) {
-          return new Response("The requested URL was not found on the server.", {
-            status: 404,
-          });
-        }
-
-        data = await response.text();
-
-        // Cache the data and metadata
-        const metadata = {
-          cachedAt: new Date().toISOString(),
-          originalUrl: url_new,
-          dataSize: data.length,
-          dataFormat: dataFormat
-        };
-
-        // Store both data and metadata in R2
-        Promise.all([
-          env.CALENDAR_CACHE.put(cacheKey, data),
-          env.CALENDAR_CACHE.put(metadataKey, JSON.stringify(metadata))
-        ]).catch(error => {
-          console.error('Failed to cache data:', error);
-          // Don't fail the request if caching fails
-        });
-      }
-
       let events = [];
 
-      if (useJsonApi) {
-        // Parse JSON data
-        const jsonData = JSON.parse(data);
-        const filteredEvents = filterEventsBySemester(jsonData.data, term);
+      if (is2025OrLater) {
+        const academicYear = `${termYear}-${termYear + 1}`;
+        const cacheKey = `calendar-data/json-${academicYear}`;
+        const cacheTTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-        // Convert JSON events to TSV-like format for compatibility
-        events = filteredEvents.map(event => {
-          const parsedDate = parseNaturalLanguageDate(event.date);
-          if (!parsedDate) return null;
+        const cached = await env.CALENDAR_CACHE.get(cacheKey);
+        if (cached) {
+          const { cachedAt, data } = JSON.parse(await cached.text());
+          if (Date.now() - new Date(cachedAt).getTime() < cacheTTL) {
+            const filteredEvents = filterEventsBySemester(data, term);
 
-          // Convert to MM/DD/YYYY format
-          const dateStr = `${parsedDate.month}/${parsedDate.day}/${event.year}`;
+            // Convert JSON events to TSV-like format for compatibility
+            events = filteredEvents
+              .map((event) => {
+                const parsedDate = parseNaturalLanguageDate(event.date);
+                if (!parsedDate) return null;
 
-          return {
-            Date: dateStr,
-            EndDate: dateStr, // Use same date for now, could be enhanced for ranges
-            Title: stripHtmlTags(event.event),
-            EventCategory: event.category,
-            Body: "null",
-            Time: "null",
-            EndTime: "null",
-            EventLocation: "null"
+                const dateStr = `${parsedDate.month}/${parsedDate.day}/${event.year}`;
+                return {
+                  Date: dateStr,
+                  EndDate: dateStr,
+                  Title: stripHtmlTags(event.event),
+                  EventCategory: event.category,
+                  Body: "null",
+                  Time: "null",
+                  EndTime: "null",
+                  EventLocation: "null",
+                };
+              })
+              .filter((event) => event !== null);
+          }
+        } else {
+          const timestamp = Date.now();
+          const apiUrl = `https://registrar.gatech.edu/calevents/proxy?year=${academicYear}&status=current&_=${timestamp}`;
+
+          const response = await fetch(apiUrl, {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
+              Accept: "application/json, text/javascript, */*; q=0.01",
+              "X-Requested-With": "XMLHttpRequest",
+              Referer: "https://registrar.gatech.edu/current-academic-calendar",
+            },
+          });
+
+          if (!response.ok) {
+            throw new Error(
+              `Failed to fetch JSON data. Status: ${response.status}`
+            );
+          }
+
+          const jsonData = await response.json();
+
+          const cachePayload = {
+            cachedAt: new Date().toISOString(),
+            data: jsonData.data,
           };
-        }).filter(event => event !== null);
+          await env.CALENDAR_CACHE.put(cacheKey, JSON.stringify(cachePayload));
+
+          const filteredEvents = filterEventsBySemester(jsonData.data, term);
+
+          // Convert JSON events to TSV-like format for compatibility
+          events = filteredEvents.map(event => {
+            const parsedDate = parseNaturalLanguageDate(event.date);
+            if (!parsedDate) return null;
+          
+            // Convert to MM/DD/YYYY format
+            const dateStr = `${parsedDate.month}/${parsedDate.day}/${event.year}`;
+          
+            return {
+              Date: dateStr,
+              EndDate: dateStr, // Use same date for now, could be enhanced for ranges
+              Title: stripHtmlTags(event.event),
+              EventCategory: event.category,
+              Body: "null",
+              Time: "null",
+              EndTime: "null",
+              EventLocation: "null"
+            };
+          }).filter(event => event !== null);
+        }
       } else {
-        // Parse TSV data
+        const url_legacy = `https://ro-blob.azureedge.net/ro-calendar-data/public/txt/${term}.txt`;
+        const response = await fetch(url_legacy);
+        if (response.status === 404) {
+          return new Response(
+            "The requested URL was not found on the server.",
+            {
+              status: 404,
+            }
+          );
+        }
+        const data = await response.text();
         const rows = data.split("\r\n");
         const headers = rows[0].split("\t");
 

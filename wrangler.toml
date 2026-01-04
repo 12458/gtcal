@@ -1,7 +1,7 @@
 #:schema node_modules/wrangler/config-schema.json
 name = "gt-cal"
 main = "src/index.js"
-compatibility_date = "2024-04-23"
+compatibility_date = "2026-01-01"
 compatibility_flags = ["nodejs_compat"]
 
 [[r2_buckets]]

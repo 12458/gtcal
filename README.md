@@ -3,6 +3,8 @@
 > An ical generator for the official GT Academic Calendar \
 > Download an iCalendar file for your academic term
 
+Updated for Spring 2026.
+
 ## How to use?
 
 Navigate to [gtcal.tools.shangen.org](https://gtcal.tools.shangen.org/) and select your academic year / semester you are interested in.

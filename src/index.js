@@ -64,7 +64,7 @@ function filterEventsBySemester(events, term) {
       semesterCodes = ["2"];
       break;
     case "05": // Summer
-      semesterCodes = ["5A", "5M", "5F", "5E", "5L", "Summer-All"];
+      semesterCodes = ["5A", "5M", "5F", "5E", "5L"];
       break;
     case "08": // Fall
       semesterCodes = ["8"];

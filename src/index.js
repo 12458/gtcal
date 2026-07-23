@@ -104,6 +104,64 @@ function getVisibleSemesters(count = 2, date = new Date()) {
   return terms;
 }
 
+function renderHomePage(terms) {
+  const rows = terms
+    .map(
+      (term, i) =>
+        `<tr><td>${mapTermToSeason(term)}</td><td>${i === 0 ? "Current" : "Next"}</td><td><a href="/${term}" download>Download .ics</a></td></tr>`
+    )
+    .join("\n  ");
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Download the Georgia Tech academic calendar as an iCalendar (.ics) file.">
+<meta name="color-scheme" content="light dark">
+<title>GT Academic Calendars</title>
+<style>
+  html { color-scheme: light dark; }
+  body {
+    min-height: 100vh;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font: 16px/1.6 ui-sans-serif, system-ui, sans-serif;
+  }
+  main { max-width: 40rem; padding: 2rem 1rem; }
+  h1 { font-size: 1.4rem; }
+  a { color: inherit; }
+  table { border-collapse: collapse; width: 100%; margin: 1.5rem 0; }
+  th, td { border: 1px solid rgba(128,128,128,0.4); padding: 0.5rem 0.75rem; text-align: left; }
+  th { font-weight: 600; }
+  hr { border: 0; border-top: 1px solid rgba(128,128,128,0.4); margin: 2rem 0 1rem; }
+  footer { color: rgba(128,128,128,0.9); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>Georgia Tech Academic Calendars</h1>
+<p>Download the official GT academic calendar as an iCalendar (.ics) file for Google Calendar, Apple Calendar, or Outlook.</p>
+<table>
+  <thead>
+    <tr><th>Semester</th><th>Term</th><th>Calendar</th></tr>
+  </thead>
+  <tbody>
+  ${rows}
+  </tbody>
+</table>
+<p>Calendars are generated from the official <a href="https://registrar.gatech.edu/calendar/">registrar data</a>.</p>
+<hr>
+<footer>
+  <p>Made by <a href="https://about.shangen.org">Shang En</a> &middot; <a href="https://github.com/12458/gtcal">Source code</a> &middot; MIT licensed</p>
+</footer>
+</main>
+</body>
+</html>`;
+}
+
 export default {
   async fetch(request, env, ctx) {
     // Get the URL of the request
@@ -117,20 +175,8 @@ export default {
       // No term provided, generate HTML for the current and next semester
       const terms = getVisibleSemesters(2);
 
-      let html =
-        '<!doctypehtml><html lang=en><meta charset=UTF-8><meta content="width=device-width,initial-scale=1"name=viewport><title>GT Academic Calendars</title><link href=https://cdn.simplecss.org/simple.min.css rel=stylesheet></head><body><h1>Georgia Tech Academic Calendars</h1>';
-
-      html += '<p>Current and upcoming semesters:</p><ul>';
-
-      for (const term of terms) {
-        html += `<li><a href="/${term}">${mapTermToSeason(term)}</a></li>`;
-      }
-
-      html +=
-        '</ul><footer><p>Made with ❤️ by <a href="https://about.shangen.org">Shang En</a><p>Licensed under the MIT license.</p><a href="https://github.com/12458/gtcal">Source Code</a></p></footer></body></html>';
-
       // Return the HTML response
-      return new Response(html, {
+      return new Response(renderHomePage(terms), {
         headers: { "Content-Type": "text/html;charset=UTF-8" },
       });
     }

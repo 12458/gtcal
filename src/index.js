@@ -121,6 +121,7 @@ export default {
 
     try {
       let events = [];
+      let hasFreshCache = false;
 
       if (is2025OrLater) {
         const academicYear = `${termYear}-${termYear + 1}`;
@@ -131,6 +132,7 @@ export default {
         if (cached) {
           const { cachedAt, data } = JSON.parse(await cached.text());
           if (Date.now() - new Date(cachedAt).getTime() < cacheTTL) {
+            hasFreshCache = true;
             const filteredEvents = filterEventsBySemester(data, term);
 
             // Convert JSON events to TSV-like format for compatibility
@@ -153,7 +155,8 @@ export default {
               })
               .filter((event) => event !== null);
           }
-        } else {
+        }
+        if (!hasFreshCache) {
           const timestamp = Date.now();
           const apiUrl = `https://registrar.gatech.edu/calevents/proxy?year=${academicYear}&status=current&_=${timestamp}`;
 

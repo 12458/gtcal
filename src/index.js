@@ -81,11 +81,27 @@ function stripHtmlTags(html) {
   return html.replace(/<[^>]*>/g, '').trim();
 }
 
-function getCurrentAcademicYear() {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const start = now.getMonth() >= 7 ? currentYear : currentYear - 1;
-  return { start, end: start + 1 };
+function getSemesterTerm(year, month) {
+  if (month >= 7) return `${year}08`; // Fall: August – December
+  if (month <= 4) return `${year}02`; // Spring: January – May
+  return `${year}05`; // Summer: June – July
+}
+
+function getNextTerm(term) {
+  const year = parseInt(term.slice(0, 4));
+  const month = term.slice(4);
+  if (month === "08") return `${year + 1}02`;
+  if (month === "02") return `${year}05`;
+  return `${year}08`;
+}
+
+function getVisibleSemesters(count = 2, date = new Date()) {
+  const current = getSemesterTerm(date.getFullYear(), date.getMonth());
+  const terms = [current];
+  while (terms.length < count) {
+    terms.push(getNextTerm(terms[terms.length - 1]));
+  }
+  return terms;
 }
 
 export default {
@@ -98,22 +114,16 @@ export default {
 
     // Check if a term parameter is provided
     if (pathSegments.length === 0) {
-      // No term provided, generate HTML for the current academic year
-      const { start: academicYearStart, end: academicYearEnd } = getCurrentAcademicYear();
-
-      const terms = [
-        { code: `${academicYearStart}08`, label: `Fall ${academicYearStart}` },
-        { code: `${academicYearEnd}02`, label: `Spring ${academicYearEnd}` },
-        { code: `${academicYearEnd}05`, label: `Summer ${academicYearEnd}` },
-      ];
+      // No term provided, generate HTML for the current and next semester
+      const terms = getVisibleSemesters(2);
 
       let html =
         '<!doctypehtml><html lang=en><meta charset=UTF-8><meta content="width=device-width,initial-scale=1"name=viewport><title>GT Academic Calendars</title><link href=https://cdn.simplecss.org/simple.min.css rel=stylesheet></head><body><h1>Georgia Tech Academic Calendars</h1>';
 
-      html += `<p>Current academic year: ${academicYearStart}–${academicYearEnd}</p><ul>`;
+      html += '<p>Current and upcoming semesters:</p><ul>';
 
       for (const term of terms) {
-        html += `<li><a href="/${term.code}">${term.label}</a></li>`;
+        html += `<li><a href="/${term}">${mapTermToSeason(term)}</a></li>`;
       }
 
       html +=
@@ -128,22 +138,20 @@ export default {
     // Assume the first path segment is the term code
     const term = pathSegments[0]; // This would be the `term` in the path `/{term}`
 
-    // Only serve calendars for the current academic year
+    // Only serve calendars for the current and next semester
     if (!/^\d{4}(02|05|08)$/.test(term)) {
       return new Response("Invalid term code.", { status: 400 });
     }
 
-    const termYear = parseInt(term.slice(0, 4));
-    const termMonth = term.slice(4);
-    const termAcademicYearStart = termMonth === "08" ? termYear : termYear - 1;
-    if (termAcademicYearStart !== getCurrentAcademicYear().start) {
+    if (!getVisibleSemesters(2).includes(term)) {
       return new Response(
-        "Calendar is only available for the current academic year.",
+        "Calendar is only available for the current and upcoming semesters.",
         { status: 404 }
       );
     }
 
     // Determine if we should use the new JSON API based on the term
+    const termYear = parseInt(term.slice(0, 4));
     const is2025OrLater = termYear >= 2025;
 
     try {

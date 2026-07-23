@@ -81,6 +81,13 @@ function stripHtmlTags(html) {
   return html.replace(/<[^>]*>/g, '').trim();
 }
 
+function getCurrentAcademicYear() {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const start = now.getMonth() >= 7 ? currentYear : currentYear - 1;
+  return { start, end: start + 1 };
+}
+
 export default {
   async fetch(request, env, ctx) {
     // Get the URL of the request
@@ -91,16 +98,22 @@ export default {
 
     // Check if a term parameter is provided
     if (pathSegments.length === 0) {
-      // No term provided, generate HTML for the current and surrounding years
-      const currentYear = new Date().getFullYear();
-      let html =
-        '<!doctypehtml><html lang=en><meta charset=UTF-8><meta content="width=device-width,initial-scale=1"name=viewport><title>GT Academic Calendars</title><link href=https://cdn.simplecss.org/simple.min.css rel=stylesheet></head><body><h1>Georgia Tech Academic Calendars</h1><ul>';
+      // No term provided, generate HTML for the current academic year
+      const { start: academicYearStart, end: academicYearEnd } = getCurrentAcademicYear();
 
-      // Generate links for three years: last year, this year, and next year
-      for (let year = currentYear - 1; year <= currentYear + 1; year++) {
-        html += `<li><a href="/${year}02">Spring ${year}</a></li>`;
-        html += `<li><a href="/${year}05">Summer ${year}</a></li>`;
-        html += `<li><a href="/${year}08">Fall ${year}</a></li>`;
+      const terms = [
+        { code: `${academicYearStart}08`, label: `Fall ${academicYearStart}` },
+        { code: `${academicYearEnd}02`, label: `Spring ${academicYearEnd}` },
+        { code: `${academicYearEnd}05`, label: `Summer ${academicYearEnd}` },
+      ];
+
+      let html =
+        '<!doctypehtml><html lang=en><meta charset=UTF-8><meta content="width=device-width,initial-scale=1"name=viewport><title>GT Academic Calendars</title><link href=https://cdn.simplecss.org/simple.min.css rel=stylesheet></head><body><h1>Georgia Tech Academic Calendars</h1>';
+
+      html += `<p>Current academic year: ${academicYearStart}–${academicYearEnd}</p><ul>`;
+
+      for (const term of terms) {
+        html += `<li><a href="/${term.code}">${term.label}</a></li>`;
       }
 
       html +=
@@ -115,8 +128,22 @@ export default {
     // Assume the first path segment is the term code
     const term = pathSegments[0]; // This would be the `term` in the path `/{term}`
 
-    // Determine if we should use the new JSON API based on the term
+    // Only serve calendars for the current academic year
+    if (!/^\d{4}(02|05|08)$/.test(term)) {
+      return new Response("Invalid term code.", { status: 400 });
+    }
+
     const termYear = parseInt(term.slice(0, 4));
+    const termMonth = term.slice(4);
+    const termAcademicYearStart = termMonth === "08" ? termYear : termYear - 1;
+    if (termAcademicYearStart !== getCurrentAcademicYear().start) {
+      return new Response(
+        "Calendar is only available for the current academic year.",
+        { status: 404 }
+      );
+    }
+
+    // Determine if we should use the new JSON API based on the term
     const is2025OrLater = termYear >= 2025;
 
     try {
@@ -236,6 +263,7 @@ export default {
       }
 
       const calendarName = `GT ${mapTermToSeason(term)} Calendar`;
+      const lastUpdated = new Date().toISOString();
 
       // Initialize an array to hold the iCalendar events
       let icsEvents = [
@@ -246,6 +274,7 @@ export default {
         "METHOD:PUBLISH",
         `X-WR-CALNAME:${calendarName}`,
         "X-WR-TIMEZONE:America/New_York",
+        `X-WR-LAST-UPDATED:${lastUpdated}`,
       ];
 
       // Parse each event into an iCalendar event

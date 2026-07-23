@@ -11,10 +11,13 @@ const event = {
 
 describe("calendar cache", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
   it("refreshes stale cached calendar data", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-15T00:00:00.000Z"));
     const stalePayload = {
       cachedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
       data: [],

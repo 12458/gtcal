@@ -271,7 +271,6 @@ export default {
       }
 
       const calendarName = `GT ${mapTermToSeason(term)} Calendar`;
-      const lastUpdated = new Date().toISOString();
 
       // Initialize an array to hold the iCalendar events
       let icsEvents = [
@@ -282,7 +281,6 @@ export default {
         "METHOD:PUBLISH",
         `X-WR-CALNAME:${calendarName}`,
         "X-WR-TIMEZONE:America/New_York",
-        `X-WR-LAST-UPDATED:${lastUpdated}`,
       ];
 
       // Parse each event into an iCalendar event

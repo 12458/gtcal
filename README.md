@@ -1,13 +1,13 @@
 # GT Cal
 
-> An ical generator for the official GT Academic Calendar \
-> Download an iCalendar file for your academic term
+> An iCalendar generator for the official GT Academic Calendar \
+> Download an iCalendar file for the current academic semester
 
 Updated for Spring 2026.
 
 ## How to use?
 
-Navigate to [gtcal.tools.shangen.org](https://gtcal.tools.shangen.org/) and select your academic year / semester you are interested in.
+Navigate to [gtcal.tools.shangen.org](https://gtcal.tools.shangen.org/) and select the current academic semester. The home page only lists the current academic year, and each generated `.ics` file includes an `X-WR-LAST-UPDATED` timestamp showing when it was last refreshed.
 
 ## Why?
 
@@ -22,8 +22,8 @@ Navigate to [gtcal.tools.shangen.org](https://gtcal.tools.shangen.org/) and sele
 
 - Clone this repo: `git clone https://github.com/12458/gtcal.git`
 - Change your directory: `cd gtcal`
-- Install Dependencies: `npm install`
-- Deploy to Cloudflare Workers: `npx wrangler deploy`
+- Install Dependencies: `pnpm install`
+- Deploy to Cloudflare Workers: `pnpm wrangler deploy`
 
 ## License
 

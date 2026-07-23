@@ -3,7 +3,7 @@
 > An iCalendar generator for the official GT Academic Calendar \
 > Download an iCalendar file for the current academic semester
 
-Updated for Spring 2026.
+Updated for Fall 2027.
 
 ## How to use?
 

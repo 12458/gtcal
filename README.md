@@ -7,7 +7,7 @@ Updated for Spring 2026.
 
 ## How to use?
 
-Navigate to [gtcal.tools.shangen.org](https://gtcal.tools.shangen.org/) and select the current academic semester. The home page only lists the current academic year, and each generated `.ics` file includes an `X-WR-LAST-UPDATED` timestamp showing when it was last refreshed.
+Navigate to [gtcal.tools.shangen.org](https://gtcal.tools.shangen.org/) and select the current or upcoming semester. The home page shows the current semester and the next semester, and each generated `.ics` file includes an `X-WR-LAST-UPDATED` timestamp showing when it was last refreshed.
 
 ## Why?
 
